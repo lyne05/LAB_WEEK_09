@@ -24,18 +24,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.navigation.NavType
 import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import java.net.URLEncoder
+import java.net.URLDecoder
+
+data class Student(
+    var name: String
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,10 +62,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class Student(
-    var name: String
-)
-
 @Composable
 fun App(navController: NavHostController) {
     NavHost(
@@ -65,19 +69,17 @@ fun App(navController: NavHostController) {
         startDestination = "home"
     ) {
         composable("home") {
-            Home { listString ->
-                navController.navigate("resultContent/?listData=$listString")
+            Home { json ->
+                navController.navigate("resultContent/?listData=$json")
             }
         }
 
         composable(
             route = "resultContent/?listData={listData}",
-            arguments = listOf(
-                navArgument("listData") { type = NavType.StringType }
-            )
+            arguments = listOf(navArgument("listData") { type = NavType.StringType })
         ) { backStackEntry ->
-            val data = backStackEntry.arguments?.getString("listData").orEmpty()
-            ResultContent(data)
+            val json = backStackEntry.arguments?.getString("listData").orEmpty()
+            ResultContent(json)
         }
     }
 }
@@ -96,6 +98,13 @@ fun Home(
 
     var inputField by remember { mutableStateOf(Student("")) }
 
+    val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
+
+    val listType = Types.newParameterizedType(List::class.java, Student::class.java)
+    val adapter = moshi.adapter<List<Student>>(listType)
+
     HomeContent(
         listData = listData,
         inputField = inputField,
@@ -103,13 +112,15 @@ fun Home(
             inputField = inputField.copy(name = newValue)
         },
         onButtonClick = {
-            if (inputField.name.isNotBlank()) {
+            if (inputField.name.trim().isNotEmpty()) {
                 listData.add(inputField)
                 inputField = Student("")
             }
         },
         navigateFromHomeToResult = {
-            navigateFromHomeToResult(listData.toList().toString())
+            val json = adapter.toJson(listData.toList())
+            val encoded = URLEncoder.encode(json, "UTF-8")
+            navigateFromHomeToResult(encoded)
         }
     )
 }
@@ -135,9 +146,7 @@ fun HomeContent(
                 TextField(
                     value = inputField.name,
                     onValueChange = { onInputValueChange(it) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text
-                    )
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                 )
 
                 Row {
@@ -146,7 +155,6 @@ fun HomeContent(
                     ) {
                         onButtonClick()
                     }
-
                     PrimaryTextButton(
                         text = stringResource(id = R.string.button_navigate)
                     ) {
@@ -171,18 +179,24 @@ fun HomeContent(
 
 @Composable
 fun ResultContent(listData: String) {
-    Column(
+    val moshi = Moshi.Builder()
+        .add(KotlinJsonAdapterFactory())
+        .build()
+
+    val listType = Types.newParameterizedType(List::class.java, Student::class.java)
+    val adapter = moshi.adapter<List<Student>>(listType)
+
+    val decoded = URLDecoder.decode(listData, "UTF-8")
+    val students = adapter.fromJson(decoded) ?: emptyList()
+
+    LazyColumn(
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        OnBackgroundItemText(text = listData)
+        items(students) { item ->
+            OnBackgroundItemText(text = item.name)
+        }
     }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PreviewHome() {
-    Home {}
 }
